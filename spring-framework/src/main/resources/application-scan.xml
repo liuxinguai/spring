@@ -4,17 +4,10 @@
        xmlns:context="http://www.springframework.org/schema/context"
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd http://www.springframework.org/schema/context https://www.springframework.org/schema/context/spring-context.xsd">
 
-<!--    <bean id="student" class="com.github.springframework.ioc.Student">-->
-<!--        <property name="name" value="liuxg" />-->
-<!--        <property name="age" value="12" />-->
-<!--        <property name="sex" value="1" />-->
-<!--        <property name="stuNo" value="001" />-->
-<!--    </bean>-->
-
-    <context:property-placeholder location="classpath:student.properties"/>
+    <context:component-scan base-package="com.github.springframework.ioc.xml" />
 
     <bean id="student" class="com.github.springframework.ioc.Student">
-        <property name="name" value="${env}" />
+        <property name="name" value="liuxg" />
         <property name="age" value="${age}" />
         <property name="sex" value="1" />
         <property name="stuNo" value="001" />
