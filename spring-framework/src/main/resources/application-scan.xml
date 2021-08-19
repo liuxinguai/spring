@@ -6,9 +6,11 @@
 
     <context:component-scan base-package="com.github.springframework.ioc.xml" />
 
+    <context:property-placeholder location="classpath:student.properties"/>
+
     <bean id="student" class="com.github.springframework.ioc.Student">
         <property name="name" value="liuxg" />
-        <property name="age" value="${age}" />
+        <property name="age" value="12" />
         <property name="sex" value="1" />
         <property name="stuNo" value="001" />
     </bean>

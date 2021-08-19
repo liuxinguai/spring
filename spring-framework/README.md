@@ -66,34 +66,53 @@
 6. AbstractAutowireCapableBeanFactory extends AbstractBeanFactory类中getSingleton(beanName, singletonFactory)->singletonFactory.getObject()->createBean(beanName, mbd, args)->doCreateBean()->populate()->initializeBean()->addSingleton(beanName, singletonObject)将Bean放入一级缓存
 > 依赖包：spring-beans、spring-core、spring-context-support、spring-context  
 >主要类图
-![AbstractBeanDefinition.png](src\main\resources\images\AbstractBeanDefinition.png)
-![AbstractBeanDefinitionReader.png](src\main\resources\images\AbstractBeanDefinitionReader.png)
-![DefaultListableBeanFactory.png](src\main\resources\images\DefaultListableBeanFactory.png)
-![AbstractApplication.png](src\main\resources\images\AbstractApplicationContext.png)
-![AbstractEnvironment.png](src\main\resources\images\AbstractEnvironment.png)
-![MutablePropertySources.png](src\main\resources\images\MutablePropertySources.png)
-![PropertySourcesPropertyResolver.png](src\main\resources\images\PropertySourcesPropertyResolver.png)
-![ResourcePropertySource.png](src\main\resources\images\ResourcePropertySource.png)
+![AbstractBeanDefinition.png](src\main\resources\images\AbstractBeanDefinition.png)<br/>
+![AbstractBeanDefinitionReader.png](src\main\resources\images\AbstractBeanDefinitionReader.png)<br/>
+![DefaultListableBeanFactory.png](src\main\resources\images\DefaultListableBeanFactory.png)<br/>
+![AbstractApplication.png](src\main\resources\images\AbstractApplicationContext.png)<br/>
+![AbstractEnvironment.png](src\main\resources\images\AbstractEnvironment.png)<br/>
+![MutablePropertySources.png](src\main\resources\images\MutablePropertySources.png)<br/>
+![PropertySourcesPropertyResolver.png](src\main\resources\images\PropertySourcesPropertyResolver.png)<br/>
+![ResourcePropertySource.png](src\main\resources\images\ResourcePropertySource.png)<br/>
+![PlaceholderConfigurerSupport.png](src\main\resources\images\PlaceholderConfigurerSupport.png)<br/>
+
 ### 创建
 #### xml启动源码分析
 ####构造器过程分析
-1.xml方式启动spring容器的代码：ClassPathXmlApplicationContext applicationContext = new ClassPathXmlApplicationContext("application-${env}.xml");
-* spring容器启动首先需要加载一个xml配置文件且在xml配置文件中配置bean的描述信息，疑问点：如果用户给出的xml文件path路径中含有占位符，此时spring是如何处理的？
+1.spring容器读取和解析资源文件（xxx-${variable}.xml）和注册BeanDefinition
+* spring容器获取与处理application.xml资源文件（），疑问点：如果用户给出的xml文件path路径中含有占位符，此时spring是如何处理的？
   * 如果由我来设计，我会如此处理占位符:
     * 初始化一个资源池，资源池的来源：环境变量或系统参数
     * 初始化一个占位符处理器，该占位符处理器功能：找出占位符并将占位符替换成原始值，则该占位符必须有的属性：占位符表达式、资源池
     * 将配置文件路径交给占位符处理器
   * spring的设计：
     * 在构造器中调用setConfigLocations(configLocations)完成资源路径的设置
-      * 请求链：setConfigLocations()->resolvePath()->getEnvironment()初始化AbstractEnvironment->AbstractEnvironment.resolvePlaceholders()
+      * 请求链：setConfigLocations()->resolvePath()->getEnvironment()初始化AbstractEnvironment->AbstractEnvironment.resolvePlaceholders()->PropertySourcesPropertyResolver.resolvePlaceholders()
       * 初始AbstractEnvironment时会初始化如下组件：
         * 初始化资源池：MutablePropertySources.java类似于java中的集合对象拥有各种PropertySource资源
         * 初始化占位符处理器：PropertySourcesPropertyResolver.java
-* spring容器现在有了资源文件路径了，接下来就是读取并解析资源文件（解析成一个个BeanDefinition对象），但在解析资源文件之前必须先创建BeanDefinitionRegister存放bean的描述信息
+* spring容器读取资源文件并解析文件
   * 1.初始化BeanDefinitionRegister之前，先做一些准备工作prepareRefresh()：比如设置BeanDefinitionRegister启动标识为true和设置关闭标识为false、初始化资源池和判断程序运行必须满足的状态是否已满足、初始化存放事件的容器
-  * 2.创建BeanDefinitionRegister容器，refreshBeanFactory()：先判断BeanDefinitionRegister容器是否已存在，若存在则销毁，再创建DefaultListableBeanFactory即：BeanDefinitionRegister注册器
-  * 3.读取(xxx.xml)，解析xxx.xml文件，将解析好的内容分装成一个个BeanDefinition对象，并将解析好的对象放入创建好的BeanDefinitionRegister容器中：loadBeanDefinitions(DefaultListableBeanFactory beanFactory)
-  * 4.初始化AbstractBeanDefinitionReader读取
+  * 2.创建BeanDefinitionRegister容器，refreshBeanFactory()->createBeanFactory()：先判断BeanDefinitionRegister容器是否已存在，若存在则销毁，再创建DefaultListableBeanFactory即：BeanDefinitionRegister注册器
+  * 3.读取并解析xxx.xml文件，并将解析好的对象（BeanDefinition）放入创建好的BeanDefinitionRegister容器中：loadBeanDefinitions(DefaultListableBeanFactory beanFactory)
+    * 1.读取过程：
+      * 1.实例化初始化XmlBeanDefinitionReader对象，初始化属性BeanDefinitionRegister、Environment环境资源池（程序运行时外界变量）、资源加载器（ResourceLoader）、xml文件校验实体
+      * 2.调用XmlBeanDefinitionReader.loadBeanDefinitions(configLocations)完成资源的加载
+      * 3.完整的读取过程调用链：loadBeanDefinitions(XmlBeanDefinitionReader)->XmlBeanDefinitionReader.loadBeanDefinitions(String... configLocations)->ResourceLoader.getResource(configLocations)->DefaultResourceLoader.getResource(locationPattern)->new ClassPathContextResource()
+    * 2.解析过程：
+      * 1.根据Resource获取资源文件流->初始化一个Document对象->初始化一个DocumentReader对象->初始化一个XmlReaderContext对象，含有资源Reasource、BeanDefinitionRegister->并将XmlReaderContext放入DocumentReader中->DocumentReader.doRegisterBeanDefinitions()完成解析动作并注册
+      * 2.流程XmlBeanDefinitionReader.loadBeanDefinitions(Resource)->doLoadBeanDefinitions(InputSource inputSource, Resource resource)->doLoadDocument(inputSource, resource)->registerBeanDefinitions(doc, resource)->registerBeanDefinitions(Document doc, XmlReaderContext readerContext)->doRegisterBeanDefinitions(Element root)->parseBeanDefinitions(Element root, BeanDefinitionParserDelegate delegate)
+      * 3.若root是一个默认的命名空间：Beans->parseDefaultElement(Element ele, BeanDefinitionParserDelegate delegate)->importBeanDefinitionResource(ele),processAliasRegistration(ele),processBeanDefinition(ele, delegate)->delegate.parseBeanDefinitionElement(ele)->registerBeanDefinition()
+      * 4.若root不是一个默认的命名空间：delegate.parseCustomElement(ele)->parseCustomElement(Element ele, @Nullable BeanDefinition containingBd)->DefaultNamespaceHandlerResolver.getNamespaceURI(ele)->DefaultNamespaceHandlerResolver.resolve(namespaceURI)->NamespaceHandler.parse(Element element, ParserContext parserContext)
+      * 5.自主扩展xml标签流程
+        * 1.在META-INF/spring.schemas添加网络.xsd-本地.xsd映射关系，例如：https\://www.springframework.org/schema/context/spring-context-2.5.xsd=org/springframework/context/config/spring-context.xsd
+        * 2.编写NamespaceHandler实现类或者继承NamespaceHandlerSupport，添加标签属性解析器（BeanDefinitionParser）用于解析标签中的属性
+        * 3.在META-INF/spring.handlers中添加NamespaceHandler处理器
+    *3.若在解析过程中xml文件中包含：<context:/>标签，则启用：
+2. spring通过BeanFactoryPostProcessor来为应用程序提供扩展BeanFactory
+* 通过BeanFactoryPostProcessor可以做到什么？
+  * 1.无需配置xml，通过代码的方式往IOC容器中注入BeanDefinition
+  * 2.修改已注入的BeanDefinition
 ### 依赖注入
 
 ## AOP
