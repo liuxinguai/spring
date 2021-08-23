@@ -75,6 +75,8 @@
 ![PropertySourcesPropertyResolver.png](src\main\resources\images\PropertySourcesPropertyResolver.png)<br/>
 ![ResourcePropertySource.png](src\main\resources\images\ResourcePropertySource.png)<br/>
 ![PlaceholderConfigurerSupport.png](src\main\resources\images\PlaceholderConfigurerSupport.png)<br/>
+![InstantiationAwareBeanPostProcessor.png](src\main\resources\images\InstantiationAwareBeanPostProcessor.png)<br/>
+![InitDestroyAnnotationBeanPostProcessor.png](src\main\resources\images\InitDestroyAnnotationBeanPostProcessor.png)<br/>
 
 ### 创建
 #### xml启动源码分析
@@ -108,11 +110,86 @@
         * 1.在META-INF/spring.schemas添加网络.xsd-本地.xsd映射关系，例如：https\://www.springframework.org/schema/context/spring-context-2.5.xsd=org/springframework/context/config/spring-context.xsd
         * 2.编写NamespaceHandler实现类或者继承NamespaceHandlerSupport，添加标签属性解析器（BeanDefinitionParser）用于解析标签中的属性
         * 3.在META-INF/spring.handlers中添加NamespaceHandler处理器
-    *3.若在解析过程中xml文件中包含：<context:/>标签，则启用：
+        * 4.例如：配置文件中有：<context:component-scan base-package="com.github.springframework.ioc.xml" />
+          * 1.spring容器先扫描META-INF/spring.schemas获取或标签的规范信息
+          * 2.读取META-INF/spring.handlers获取.xsd对应的NamespaceHandler处理器：ContextNamespaceHandler
+          * 3.解析context标签，根据context标签的属性获取对应的标签处理器，例如：component-scan属性，则启用：ComponentScanBeanDefinitionParser
+          * 4.调用ComponentScanBeanDefinitionParser.parse()方法解析标签
+          * 5.执行parse()时，spring容器会扫描base-package包下所有被spring注解标签的类将其解析成一个个BeanDefinition，然后将其放入BeanDefinitionRegister中
+          * 6.扫描完base-package下的类后，spring还会额外地注入：BeanDefinition：ConfigurationClassPostProcessor(BeanDefinitionRegistryPostProcessor)、CommonAnnotationBeanPostProcessor(JSR-250 support)、AutowiredAnnotationBeanPostProcessor、PersistenceAnnotationBeanPostProcessor(JPA support)、EventListenerMethodProcessor、DefaultEventListenerFactory
+        * 5.例如：配置文件中有：<context:property-placeholder location="classpath:student.xml" />
+          * 1.spring容器先扫描META-INF/spring.schemas获取或标签的规范信息
+          * 2.读取META-INF/spring.handlers获取.xsd对应的NamespaceHandler处理器：ContextNamespaceHandler
+          * 3.解析context标签，根据context标签的属性获取对应的标签处理器，例如：property-placeholder属性，则启用：PropertyPlaceholderBeanDefinitionParser
+          * 4.执行parse()->parseInternal()->getBeanClass()来注册一个BeanDefinition：PropertySourcesPlaceholderConfigurer(完成类中属性占位符的替换)
 2. spring通过BeanFactoryPostProcessor来为应用程序提供扩展BeanFactory
 * 通过BeanFactoryPostProcessor可以做到什么？
   * 1.无需配置xml，通过代码的方式往IOC容器中注入BeanDefinition
+    * 1.实现：BeanDefinitionRegisterPostProcessor.java来额外地注入BeanDefinition
+    * 2.例如：ConfigurationClassPostProcessor用于处理被@Configuration注解的类，可在@Configuration类中添加@Bean标签往容器中注入BeanDefinition对象
   * 2.修改已注入的BeanDefinition
+    * 1.实现PlaceHolderConfigurerSupport，用于动态地替换BeanDefinition中含有占位符的属性
+    * 2.例如：PropertySourcesPlaceholderConfigurer替换属性中的占位符
+  * 3.BeanFactoryPostProcessor的执行顺序
+    * 1.执行应用程序自己配置的BeanDefinitionRegisterPostProcessor即：postProcessBeanDefinitionRegistry()
+    * 2.查找并执行spring容器内置的Bean implements BeanDefinitionRegisterPostProcessor，执行顺序为：
+      * 1.若Bean还实现了：PriorityOrdered、Ordered，则先对这些接口按照getOrder()的顺序进行排序，然后在对排好序的BeanDefinitionRegisterPostProcessor接口，依次执行：postProcessBeanDefinitionRegistry
+      * 2.若Bean未实现：PriorityOrdered、Ordered，则按照查找顺序依次执行postProcessBeanDefinitionRegistry()
+    * 3.执行应用程序配置的BeanFactoryPostProcessor.postProcessBeanFactory()，执行顺序为：
+      * 1.配置的BeanFactoryPostProcessor还实现了PriorityOrdered、Ordered，则执行顺序为getOrder()
+      * 2.执行普通的BeanFactoryPostProcessor.postProcessBeanFactory()
+    * 4.查找并执行spring容器内置的Bean implements BeanFactoryPostProcessor.postProcessBeanFactory(),执行顺序为查找顺序
+3. spring通过BeanDefinition实例化Bean，并将Bean放入：singletonObjects（一级缓存）的过程
+    * 1.实例化：BeanFactory.preInstantiateSingletons()->getBean()->doGetBean()->先从缓存中查找，查找顺序：一级、二级、三级，即：getSingleton(String beanName, boolean allowEarlyReference)，若在三级缓存中查找到了，则将对象放入二级缓存中，并返回二级缓存中的对象
+      * 1.未找到：getSingleton(String beanName, ObjectFactory<?> singletonFactory)->从一级缓存中查找即：this.singletonObjects.get(beanName)，若找到，则直接放回实例
+        * 1.未从一级缓存中找到时：singletonFactory.getObject()->singletonFactory.getObject()->createBean(beanName, mbdToUse, args)->doCreateBean(beanName, mbdToUse, args)->createBeanInstance(beanName, mbd, args)->instantiateBean(beanName, mbd)->InstantiationStrategy.instantiate(mbd, beanName, this)
+        * 2.createBeanInstance(beanName, mbd, args)->applyMergedBeanDefinitionPostProcessors(mbd, beanType, beanName)->MergedBeanDefinitionPostProcessor.postProcessMergedBeanDefinition(mbd, beanType, beanName)
+        * 3.postProcessMergedBeanDefinition->addSingletonFactory(beanName, () -> getEarlyBeanReference(beanName, mbd, bean))，将该对象放入singletonFactories（三级缓存）中
+      * 2.找到，立即返回实例化的bean
+    * 2.属性赋值：调用populateBean(String beanName, RootBeanDefinition mbd, @Nullable BeanWrapper bw)完成对象属性的初始化
+      * 1.调用spring容器中实现了InstantiationAwareBeanPostProcessor extends BeanPostProcessor接口的postProcessAfterInstantiation(Object bean, String beanName)
+      * 2.调用spring容器中实现了InstantiationAwareBeanPostProcessor接口的postProcessAfterInstantiation(Object bean, String beanName)
+        * 例如：AutowiredAnnotationBeanPostProcessor extends SmartInstantiationAwareBeanPostProcessor，调用AutowiredAnnotationBeanPostProcessor.postProcessProperties(pvs, bean, beanName)
+          * postProcessProperties(beanName, bean, pvs)->findAutowiringMetadata(beanName, bean.getClass(), pvs)->metadata.inject(bean, beanName, pvs)完成bean中被@Autowired属性的自动注入
+          * metadata.inject(bean, beanName, pvs)->AutowiredFieldElement..inject(bean, beanName, pvs)->resolveFieldValue(field, bean, beanName)->beanFactory.resolveDependency(desc, beanName, autowiredBeanNames, typeConverter)->doResolveDependency(descriptor, beanName, autowiredBeanNames, typeConverter)
+          * resolveCandidate(beanName, requiredType, beanFactory)->beanFactory.getBean(beanName)实例化被@Autowired标注的属性的值
+      * 3.调用：applyPropertyValues(beanName, mbd, bw, pvs)注入其它属性值
+    * 3.初始化：initializeBean(String beanName, Object bean, @Nullable RootBeanDefinition mbd)
+      * 1.invokeAwareMethods(beanName,Object)->BeanNameAware.setBeanName(beanName)
+      * 2.applyBeanPostProcessorsBeforeInitialization(existingBean, beanName)->BeanPostProcessor.postProcessBeforeInitialization(existingBean, beanName)
+      * 3.invokeInitMethods()->InitializingBean.afterPropertiesSet()
+      * 4.invokeCustomInitMethod(beanName, bean, mbd)
+    * 4.放入一级缓存中（singletonObjects），即：执行完getSingleton(String beanName, ObjectFactory<?> singletonFactory)->addSingleton(beanName, singletonObject)：将对象放入一级缓存，删除二级、三级缓存中的Bean
+    * 5.BeanPostProcessor执行顺序：
+      * 1.createBean()->resolveBeforeInstantiation()->applyBeanPostProcessorsBeforeInstantiation(beanClass, beanName)不为空->applyBeanPostProcessorsAfterInitialization(bean, beanName)
+        * 1.applyBeanPostProcessorsBeforeInstantiation(targetType, beanName)->InstantiationAwareBeanPostProcessor.postProcessBeforeInstantiation(beanClass, beanName)
+        * 2.applyBeanPostProcessorsAfterInitialization(bean, beanName)->BeanPostProcessor.postProcessAfterInitialization(bean, beanName)
+      * 2.doCreateBean()->applyMergedBeanDefinitionPostProcessors()->MergedBeanDefinitionPostProcessor.postProcessMergedBeanDefinition(beanDefinition, beanClass, beanName)
+      * 3.populate()->InstantiationAwareBeanPostProcessor.postProcessAfterInstantiation(bean, beanName)->InstantiationAwareBeanPostProcessor.postProcessProperties(propertyValues, bean, beanName)完成@Resource/@Autowired属性的注入
+      * 4.initializeBean()->applyBeanPostProcessorsBeforeInitialization()->BeanPostProcessor.postProcessAfterInitialization(bean, beanName)->applyBeanPostProcessorsAfterInitialization()->BeanPostProcessor.postProcessAfterInitialization(bean, beanName)
+      * 5.getEarlyBeanReference()->SmartInstantiationAwareBeanPostProcessor.getEarlyBeanReference(bean, beanName)
+    * 6.实例化与初始化过程主要流程：
+      * 1.getBean(name, beanClass, args)->doGetBean(name, beanClass, args, typeCheckOnly)->getSingleton(name)
+        * 若getSingleton(name)从缓存中查找到了，流程终止。缓存中查找的过程：先从一级缓存中查找，若没有，再从二级缓存中查找，若没有，再从三级缓存中查找，若找到了，则执行getEarlyBeanReference()返回三级缓存中的对象，并删除三级缓存，将其放入二级缓存中，并返回
+      * 2.getSingleton(name)->getSingleton(beanName, () -> {createBean(beanName, beanDefinition, args)}(ObjectFactory<?> objectFactory))->singletonFactory.getObject()->createBean(beanName, beanDefinition, args)
+      * 3.createBean(beanName, beanDefinition, args)->resolveBeforeInstantiation(beanName, beanDefinition)->doCreateBean(beanName, beanDefinition, args)->createBeanInstance(beanName, beanDefinition, args)
+      * 4.createBeanInstance(beanName, beanDefinition, args)->applyMergedBeanDefinitionPostProcessors(mbd, beanType, beanName)->addSingletonFactory(beanName, () -> getEarlyBeanReference(beanName, mbd, bean))放入三级缓存
+      * 5.addSingletonFactory(beanName,objectFactory)->populateBean(beanName, beanDefinition, bean)完成属性依赖注入，有如下两种方式：
+        * 1.InstantiationAwareBeanPostProcessor.postProcessProperties()完成@Resource/@Autowired属性依赖的注入
+        * 2.applyPropertyValues(beanName, beanDefinition, beanWrapper, propertyValues)
+          * 1.简单属性依赖（基础类型依赖，String）-> beanWrapper.setPropertyValues(MutablePropertyValues)完成属性依赖
+          * 2.复杂属性依赖（非基础类型依赖，String）BeanDefinitionValueResolver.resolveValueIfNecessary(PropertyValue, originalValue)->resolveReference(argName, runtimeBeanReference)->beanFactory.getBean(resolvedName)
+      * 6.populateBean(beanName, beanDefinition, bean)->initializeBean(beanName, bean, beanDefinition)->addSingleton(beanName, singletonObject)放入一级缓存中
+    * 7.spring解决循环依赖流程
+      * 例如：a 依赖 b，b -> c，c -> a,假设a优先被加载，这时一级、二级、三级缓存中都没有a,b,c对象
+      * a执行到createBeanInstance()执行完后得到实例beanA(addSingletonFactory)并放入三级缓存中->调用a.populate()发现依赖b，则调用getBean(b)，此时三级缓存中有a
+      * b执行到createBeanInstance()执行完后得到实例beanB(addSingletonFactory)并放入三级缓存中->调用b.populate()发现依赖c，则调用getBean(c)，此时三级缓存中有a,b
+      * c执行到createBeanInstance()执行完后得到实例beanC(addSingletonFactory)并放入三级缓存中->调用b.populate()发现依赖a，则调用getBean(a)，此时三级缓存中有a,b,c
+      * c.getBean(a)->getSingleton(name)从三级缓存中能获取到a，放入二级缓存，移除3级缓存中的a，即：a = singletonFactory.getObject()->getEarlyBeanReference()->earlySingletonObjects.put(beanName, singletonObject)->singletonFactories.remove(beanName)，此时三级缓存中有c,b，二级缓存a
+      * c.populate(a)->c.addSingleton()，此时c是一个完整对象，并返回c对象。c放入一级缓存中，并移除二级、三级缓存中的c，此时三级缓存：b，二级缓存：a，一级缓存：c
+      * b.populate(c)->b.addSingleton()，此时b是一个完整对象，并返回b对象。b放入一级缓存中，并移除二级、三级缓存中的b，此时三级缓存：无，二级缓存：a，一级缓存：b,c
+      * a.populate(b)->a.addSingleton()，此时a是一个完整对象，并返回a对象。a放入一级缓存中，并移除二级、三级缓存中的a，此时三级缓存：无，二级缓存：无，一级缓存：a,b,c
+   
 ### 依赖注入
 
 ## AOP
