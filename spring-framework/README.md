@@ -41,7 +41,7 @@
         - BeanFactory.getAliases()bean的别名
         - BeanFactory.getType(name)获取bean的class
         - BeanFactory.containsBean(name)是否包含指定的bean
-+ spring是如何为应用程序提供修改spring容器中的bean的描述信息提供可扩展性的
++ spring是如何为应用程序提供修改spring容器中的BeanFactory提供可扩展性的
     - 通过BeanFactoryPostProcessors来提供扩展性的
 + spring是如何为应用程序的bean提供个性化扩展的？
     - spring通过bean的生命周期的方式来为程序提供个性化方式的扩展（个人理解）
@@ -116,6 +116,7 @@
           * 3.解析context标签，根据context标签的属性获取对应的标签处理器，例如：component-scan属性，则启用：ComponentScanBeanDefinitionParser
           * 4.调用ComponentScanBeanDefinitionParser.parse()方法解析标签
           * 5.执行parse()时，spring容器会扫描base-package包下所有被spring注解标签的类将其解析成一个个BeanDefinition，然后将其放入BeanDefinitionRegister中
+            * 此过程通过：ClassPathBeanDefinitionScanner组件来完成，通过：ClassPathBeanDefinitionScanner.doScan("package-name")->findCandidateComponents()来完成包下加载
           * 6.扫描完base-package下的类后，spring还会额外地注入：BeanDefinition：ConfigurationClassPostProcessor(BeanDefinitionRegistryPostProcessor)、CommonAnnotationBeanPostProcessor(JSR-250 support)、AutowiredAnnotationBeanPostProcessor、PersistenceAnnotationBeanPostProcessor(JPA support)、EventListenerMethodProcessor、DefaultEventListenerFactory
         * 5.例如：配置文件中有：<context:property-placeholder location="classpath:student.xml" />
           * 1.spring容器先扫描META-INF/spring.schemas获取或标签的规范信息
@@ -189,7 +190,30 @@
       * c.populate(a)->c.addSingleton()，此时c是一个完整对象，并返回c对象。c放入一级缓存中，并移除二级、三级缓存中的c，此时三级缓存：b，二级缓存：a，一级缓存：c
       * b.populate(c)->b.addSingleton()，此时b是一个完整对象，并返回b对象。b放入一级缓存中，并移除二级、三级缓存中的b，此时三级缓存：无，二级缓存：a，一级缓存：b,c
       * a.populate(b)->a.addSingleton()，此时a是一个完整对象，并返回a对象。a放入一级缓存中，并移除二级、三级缓存中的a，此时三级缓存：无，二级缓存：无，一级缓存：a,b,c
-   
+
+#### 注解启动源码分析
+####构造器过程分析
+1.new AnnotationConfigApplicationContext()
+    1. 初始化new DefaultListableBeanFactory()即：初始化：BeanDefinitionRegister和DefaultSingletonBeanRegistry，疑问点为啥要在构造函数中优先初始化new DefaultListableBeanFactory()
+        1.AnnotationConfigApplicationContext构建完成后且初始化new DefaultListableBeanFactory()，此时调用：register()或scan()来完成容器加载bean动作，这时加载到的BeanDefinition无处存放
+    2. 初始化AnnotatedBeanDefinitionReader和ClassPathBeanDefinitionScanner
+        1.AnnotatedBeanDefinitionReader用于读取解析使用register()加载的bean
+            * 初始化AnnotatedBeanDefinitionReader时，会加载spring容器用于处理内部注解的XxxPost：例如：ConfigurationClassPostProcessor、AutowiredAnnotationBeanPostProcessor等
+            * 调用register()加载bean过程：register()->doRegister()
+            * ConfigurationClassPostProcessor加载被@ComponentScan注入的package中bean的过程：ConfigurationClassPostProcessor.postProcessBeanDefinitionRegistry()->processConfigBeanDefinitions(registry)->ConfigurationClassParser.parse()->processConfigurationClass()->doProcessConfigurationClass()->ComponentScanAnnotationParser.parse()->ClassPathBeanDefinitionScanner.doScan()
+            * ConfigurationClassPostProcessor加载被@Import注入的Bean的过程：ConfigurationClassParser.doProcessConfigurationClass()加载@ComponentScan完后->processImports()->判断是否为ImportSelector接口、ImportBeanDefinitionRegistrar、普通class
+                * ImportSelector接口时调用：ImportSelector.getExclusionFilter()->ImportSelector.selectImports()->Predicate.test()
+                * ImportBeanDefinitionRegistrar接口时调用：configClass.addImportBeanDefinitionRegistrar(importBeanDefinitionRegistrars)放入map集合中
+                * 普通class接口时，调用；processConfigurationClass()完成Bean的加载
+            * ConfigurationClassPostProcessor加载被@ImportSource注入的资源的过程：ConfigurationClassParser.doProcessConfigurationClass()加载@ComponentScan完后->addImportedResource()放入(importedResources)map集合中
+            * ConfigurationClassPostProcessor加载被@Bean注入的bean的过程：ConfigurationClassParser.parse()->ConfigurationClassBeanDefinitionReader.loadBeanDefinitions()->loadBeanDefinitionsForConfigurationClass()->loadBeanDefinitionsForBeanMethod()完成
+            * 处理完ConfigurationClassBeanDefinitionReader.loadBeanDefinitionsForBeanMethod()后->loadBeanDefinitionsFromImportedResources()完成被@ImportSource载入的资源->loadBeanDefinitionsFromRegistrars()完成被Import导入的资源
+        2.ClassPathBeanDefinitionScanner用于读取使用scan()包名加载的bean
+            * 初始化ClassPathBeanDefinitionScanner时，会初始化bean记载过滤器：AnnotationTypeFilter和环境以及资源加载器
+            * scan()加载bean过程：scan()->ClassPathBeanDefinitionScanner.doScan()
+    3. 调用register()或scan()方法完成整体spring容器需要加载的bean操作
+    4.调用refresh()完成bean的初始化操作
+
 ### 依赖注入
 
 ## AOP
