@@ -201,13 +201,21 @@
             * 初始化AnnotatedBeanDefinitionReader时，会加载spring容器用于处理内部注解的XxxPost：例如：ConfigurationClassPostProcessor、AutowiredAnnotationBeanPostProcessor等
             * 调用register()加载bean过程：register()->doRegister()
             * ConfigurationClassPostProcessor加载被@ComponentScan注入的package中bean的过程：ConfigurationClassPostProcessor.postProcessBeanDefinitionRegistry()->processConfigBeanDefinitions(registry)->ConfigurationClassParser.parse()->processConfigurationClass()->doProcessConfigurationClass()->ComponentScanAnnotationParser.parse()->ClassPathBeanDefinitionScanner.doScan()
-            * ConfigurationClassPostProcessor加载被@Import注入的Bean的过程：ConfigurationClassParser.doProcessConfigurationClass()加载@ComponentScan完后->processImports()->判断是否为ImportSelector接口、ImportBeanDefinitionRegistrar、普通class
-                * ImportSelector接口时调用：ImportSelector.getExclusionFilter()->ImportSelector.selectImports()->Predicate.test()
+            * ConfigurationClassPostProcessor加载被@Import注入的Bean的过程：ConfigurationClassParser.doProcessConfigurationClass()加载@ComponentScan完后->getImports()->processImports()->判断被@Import注解表示的类是实现了：ImportSelector、ImportBeanDefinitionRegistrar、普通的java类
+                * 普通的class类，processImports()->processConfigurationClass()->doProcessConfigurationClass(),sourceClass=null->configurationClasses.put(configClass, configClass)完成将资源放入configurationClasses集合中
+                * ImportSelector接口时调用：processImports()->ImportSelector.getExclusionFilter()->ImportSelector.selectImports()->Predicate.test()->processImports()->然后再走不同class类的流程
                 * ImportBeanDefinitionRegistrar接口时调用：configClass.addImportBeanDefinitionRegistrar(importBeanDefinitionRegistrars)放入map集合中
-                * 普通class接口时，调用；processConfigurationClass()完成Bean的加载
-            * ConfigurationClassPostProcessor加载被@ImportSource注入的资源的过程：ConfigurationClassParser.doProcessConfigurationClass()加载@ComponentScan完后->addImportedResource()放入(importedResources)map集合中
-            * ConfigurationClassPostProcessor加载被@Bean注入的bean的过程：ConfigurationClassParser.parse()->ConfigurationClassBeanDefinitionReader.loadBeanDefinitions()->loadBeanDefinitionsForConfigurationClass()->loadBeanDefinitionsForBeanMethod()完成
-            * 处理完ConfigurationClassBeanDefinitionReader.loadBeanDefinitionsForBeanMethod()后->loadBeanDefinitionsFromImportedResources()完成被@ImportSource载入的资源->loadBeanDefinitionsFromRegistrars()完成被Import导入的资源
+                * ConfigurationClassPostProcessor加载被@Import注入的Bean的过程采用了递归的方式解决
+            * ConfigurationClassPostProcessor调用：ConfigurationClassParser.parse()完成了对@Import资源的加载但还未解析成BeanDefinition，例如：@Import注入的资源放入：ConfigurationClassParser.configurationClasses集合中和ConfigurationClass.importBeanDefinitionRegistrars集合中
+            * ConfigurationClassPostProcessor加载被@ImportSource注入的资源的过程：ConfigurationClassParser.parse()->ConfigurationClassParser.doProcessConfigurationClass()加载@ComponentScan完后->addImportedResource()->ConfigurationClass.importedResources集合中
+            * ConfigurationClassPostProcessor加载被@Bean注入的资源的过程：ConfigurationClassParser.parse()->ConfigurationClassParser.doProcessConfigurationClass()加载@ComponentScan完后->retrieveBeanMethodMetadata()解析出来@Bean注解的bean->addBeanMethod()->放入ConfigurationClass.beanMethods集合
+            * ConfigurationClassPostProcessor调用：ConfigurationClassParser.parse()完成了对@Bean资源的加载但还未解析成BeanDefinition，例如：@Bean注入的资源放入：ConfigurationClass.beanMethods集合中
+            * ConfigurationClassPostProcessor调用ConfigurationClassParser.parse()完成资源的加载但资源还未被解析，ConfigurationClassParser.parse()->ConfigurationClassBeanDefinitionReader.loadBeanDefinitions()完成资源的解析并放入BeanDefinitionRegister中
+                * ConfigurationClassBeanDefinitionReader.loadBeanDefinitions()->loadBeanDefinitionsForConfigurationClass()->registerBeanDefinitionForImportedConfigurationClass()完成@Import注入的普通的class类和被ImportSelector筛选出来的普通class类
+                * ConfigurationClassBeanDefinitionReader.loadBeanDefinitions()->loadBeanDefinitionsForConfigurationClass()->loadBeanDefinitionsForBeanMethod()完成被@Bean注入的普通的class类
+                    * 使用@Conditional标签满足特定条件才加载Bean流程->loadBeanDefinitionsForBeanMethod()->ConditionEvaluator.shouldSkip()->Condition.matches()
+                * ConfigurationClassBeanDefinitionReader.loadBeanDefinitions()->loadBeanDefinitionsForConfigurationClass()->loadBeanDefinitionsFromImportedResources()
+                * ConfigurationClassBeanDefinitionReader.loadBeanDefinitions()->loadBeanDefinitionsForConfigurationClass()->loadBeanDefinitionsFromRegistrars()->ImportBeanDefinitionRegistrar.registerBeanDefinitions()完成资源的加载
         2.ClassPathBeanDefinitionScanner用于读取使用scan()包名加载的bean
             * 初始化ClassPathBeanDefinitionScanner时，会初始化bean记载过滤器：AnnotationTypeFilter和环境以及资源加载器
             * scan()加载bean过程：scan()->ClassPathBeanDefinitionScanner.doScan()
