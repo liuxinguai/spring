@@ -225,4 +225,28 @@
 ### 依赖注入
 
 ## AOP
+> AOP:面向切面编程，其中主要的几个概念
+1. 切面-增强点-通知(advisor)：即全局增强的java代码模块，例如操作日志功能和权限校验功能，有如下通知
+   1. before：前置通知用于将切面代码插入方法之前，也就是说，在方法执行之前，会首先执行前置通知里的代码.包含前置通知代码的类就是切面。
+   2. after：后置通知的代码在调用被拦截的方法后调用。
+   3. Around：环绕通知能力最强，可以在方法调用前执行通知代码，可以决定是否还调用目标方法。也就是说它可以控制被拦截的方法的执行，还可以控制被拦截方法的返回值。
+2. 切入点(pointcut)：即需要在程序的那个地方进行切入
+3. 连接点(joinPoint)：切入的程序入口的地方,比如对于方法而言，两个连接点：方法调用call，方法执行execution，
+4. 织入(weave)：将切面通过切入点插入到连接点的过程称之为：织入
+###ProxyFactoryBean版aop过程解析
+1. spring IOC容器启动，注入代理的ProxyFactoryBean
+2. 使用factory.getBean("代理bean名称",代理.class)获取代理的类流程：
+    1. ProxyFactoryBean.getObject()->ProxyFactoryBean.initializeAdvisorChain()初始化增强器->addAdvisorOnChainCreation()将增强器注入到advisors集合中
+    2. ProxyFactoryBean.getSingletonInstance()创建代理bean->createProxy()创建代理bean根据是否实现接口来选择是使用jdk代理(JdkDynamicAopProxy)还是cglib代理(ObjenesisCglibAopProxy)并将AdvisedSupport传入给代理的类(即往代理类中传入增强器)
+    3. createProxy()创建代理bean->getProxy()获取代理bean
+3. 代理bean.methodName()执行方法时，即执行
+   + JdkDynamicAopProxy
+     1. JdkDynamicAopProxy.invoke()->AopSupports.getInterceptorsAndDynamicInterceptionAdvice()获取增强器Advisor
+     2. 构建ReflectiveMethodInvocation对象将增强器和被代理类传入到ReflectiveMethodInvocation中
+     3. ReflectiveMethodInvocation.proceed()执行(过滤器模式)->interceptorsAndDynamicMethodMatchers.get()获取增强器
+     4. 调用增强器对应的MethodInterceptor拦截器.invoke()方法执行增强器中的业务逻辑
+        1. MethodBeforeAdviceInterceptor.invoke()->MethodBeforeAdvice.before()->ReflectiveMethodInvocation.prceed()
+        2. AfterReturningAdviceInterceptor.invoke()->ReflectiveMethodInvocation.proceed()->AfterReturningAdvice.afterReturning()
+        3. ThrowsAdviceInterceptor.invoke()->ReflectiveMethodInvocation.proceed()->throw Exception->getExceptionHandler()获取异常增强器->调用异常处理器的方法处理异常
+        
 
