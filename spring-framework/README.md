@@ -271,3 +271,5 @@
 ![MethodBeforeAdviceInterceptor.png](src\main\resources\images\MethodBeforeAdviceInterceptor.png)<br/>
 ![MethodBeforeAdvice.png](src\main\resources\images\MethodBeforeAdvice.png)<br/>
 ![BeanNameAutoProxyCreator.png](src\main\resources\images\BeanNameAutoProxyCreator.png)<br/>
+![AspectJAwareAdvisorAutoProxyCreator.png](src\main\resources\images\AspectJAwareAdvisorAutoProxyCreator.png)<br/>
+![AspectJAroundAdvice.png](src\main\resources\images\AspectJAroundAdvice.png)<br/>
