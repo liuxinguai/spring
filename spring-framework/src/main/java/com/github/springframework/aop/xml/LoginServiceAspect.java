@@ -9,7 +9,7 @@ import java.lang.reflect.Method;
 /**
  * @author liuxg
  */
-public class UserServiceAspect implements MethodBeforeAdvice, AfterReturningAdvice, ThrowsAdvice {
+public class LoginServiceAspect implements MethodBeforeAdvice, AfterReturningAdvice, ThrowsAdvice {
 
     @Override
     public void before(Method method, Object[] args, Object target) throws Throwable {

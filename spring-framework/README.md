@@ -248,5 +248,26 @@
         1. MethodBeforeAdviceInterceptor.invoke()->MethodBeforeAdvice.before()->ReflectiveMethodInvocation.prceed()
         2. AfterReturningAdviceInterceptor.invoke()->ReflectiveMethodInvocation.proceed()->AfterReturningAdvice.afterReturning()
         3. ThrowsAdviceInterceptor.invoke()->ReflectiveMethodInvocation.proceed()->throw Exception->getExceptionHandler()获取异常增强器->调用异常处理器的方法处理异常
-        
-
+     5. MethodInterceptor.invoke()执行对应的Advisor方法采用了装饰者模式
+   + CglibAopProxy
+     1. CglibAopProxy.getProxy()->使用cglib代理创建代理类
+        1. 创建Enhancer
+        2. 设置被代理类实现的Classload、设置父类
+        3. 获取CallBack：DynamicAdvisedInterceptor(Aop代理方法)、targetInterceptor(目标代理过滤器)、targetDispatcher(目标转发器)、equals/hash
+        4. 设置方法过滤器：ProxyCallbackFilter
+        5. 通过Enhancer.create()完成代理类的初始化
+     2. 执行ProxyCallbackFilter.accept()获取CallBack数组中的过滤方法处理器，例如：DynamicAdvisedInterceptor、EqualsInterceptor等
+     3. 执行DynamicAdvisedInterceptor.intercept()->new CglibMethodInvocation()
+     4. 执行CglibMethodInvocation.proceed()->ReflectiveMethodInvocation.proceed()
+###BeanNameAutoProxyCreator版
+   1. 在ioc容器启动时，在AbstractApplicationContext.registerBeanPostProcessors()实例化SmartInstantiationAwareBeanPostProcessor
+   2. AbstractApplicationContext.finishBeanFactoryInitialization(factory)->DefaultListableBeanFactory.preInstantiateSingletons()完成单例的实例化
+      1. 被代理的类：userService，在实例化userService时，通过IOC容器进行实例化过程中在进行到createBean()->doCreateBean()->initializeBean()时
+      2. AbstractAutowireCapableBeanFactory.initializeBean()->applyBeanPostProcessorsAfterInitialization()
+      3. 从springIOC容器中获取BeanNameAutoProxyCreator实例并执行postProcessAfterInitialization()方法即：AbstractAutoProxyCreator.postProcessAfterInitialization()->wrapIfNecessary()
+      4. AbstractAutoProxyCreator.wrapIfNecessary()->createProxy()->createAopProxy().getProxy()回到上面创建Aop代理类的流程
+> 类图
+![ProxyFactoryBean.png](src\main\resources\images\ProxyFactoryBean.png)<br/>
+![MethodBeforeAdviceInterceptor.png](src\main\resources\images\MethodBeforeAdviceInterceptor.png)<br/>
+![MethodBeforeAdvice.png](src\main\resources\images\MethodBeforeAdvice.png)<br/>
+![BeanNameAutoProxyCreator.png](src\main\resources\images\BeanNameAutoProxyCreator.png)<br/>
