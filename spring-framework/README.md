@@ -193,11 +193,11 @@
 
 #### 注解启动源码分析
 ####构造器过程分析
-1.new AnnotationConfigApplicationContext()
+* new AnnotationConfigApplicationContext()
     1. 初始化new DefaultListableBeanFactory()即：初始化：BeanDefinitionRegister和DefaultSingletonBeanRegistry，疑问点为啥要在构造函数中优先初始化new DefaultListableBeanFactory()
         1.AnnotationConfigApplicationContext构建完成后且初始化new DefaultListableBeanFactory()，此时调用：register()或scan()来完成容器加载bean动作，这时加载到的BeanDefinition无处存放
     2. 初始化AnnotatedBeanDefinitionReader和ClassPathBeanDefinitionScanner
-        1.AnnotatedBeanDefinitionReader用于读取解析使用register()加载的bean
+        1. AnnotatedBeanDefinitionReader用于读取解析使用register()加载的bean
             * 初始化AnnotatedBeanDefinitionReader时，会加载spring容器用于处理内部注解的XxxPost：例如：ConfigurationClassPostProcessor、AutowiredAnnotationBeanPostProcessor等
             * 调用register()加载bean过程：register()->doRegister()
             * ConfigurationClassPostProcessor加载被@ComponentScan注入的package中bean的过程：ConfigurationClassPostProcessor.postProcessBeanDefinitionRegistry()->processConfigBeanDefinitions(registry)->ConfigurationClassParser.parse()->processConfigurationClass()->doProcessConfigurationClass()->ComponentScanAnnotationParser.parse()->ClassPathBeanDefinitionScanner.doScan()
@@ -266,10 +266,44 @@
       2. AbstractAutowireCapableBeanFactory.initializeBean()->applyBeanPostProcessorsAfterInitialization()
       3. 从springIOC容器中获取BeanNameAutoProxyCreator实例并执行postProcessAfterInitialization()方法即：AbstractAutoProxyCreator.postProcessAfterInitialization()->wrapIfNecessary()
       4. AbstractAutoProxyCreator.wrapIfNecessary()->createProxy()->createAopProxy().getProxy()回到上面创建Aop代理类的流程
+###Aop:config版
+   1. 在IOC容器的构造过程中进行解析xml标签时，即执行到：DefaultBeanDefinitionDocumentReader.parseBeanDefinitions()->BeanDefinitionParserDelegate.parseCustomElement()
+   2. BeanDefinitionParserDelegate.parseCustomElement()->readerContext.getNamespaceHandlerResolver().resolve(namespaceUri)->AopNamespaceHandler.parse()
+   3. parse()->初始化了三个xml标签解析器：ConfigBeanDefinitionParser（解析config标签）、AspectJAutoProxyBeanDefinitionParser(解析aspectj-autoproxy)、ScopedProxyBeanDefinitionDecorator(scoped-proxy)等
+   4. 通过使用ConfigBeanDefinitionParser解析config标签往spring容器中注册了AspectJAwareAdvisorAutoProxyCreator的BeanDefinition
+   5. 在AbstractApplication的fresh()->registerBeanPostProcessors()完成将AspectJAwareAdvisorAutoProxyCreator注入到spring的IOC容器中
+   6. 在IOC创建单例实例时过程的AbstractAutowireCapableBeanFactory.initializeBean()->applyBeanPostProcessorsAfterInitialization()->执行AspectJAwareAdvisorAutoProxyCreator.postProcessAfterInitialization()回到上面的ProxyFactoryBean的流程中
+###Aop:auto版
+   1. 在IOC容器的构造过程中进行解析xml标签时，即执行到：DefaultBeanDefinitionDocumentReader.parseBeanDefinitions()->BeanDefinitionParserDelegate.parseCustomElement()
+   2. BeanDefinitionParserDelegate.parseCustomElement()->readerContext.getNamespaceHandlerResolver().resolve(namespaceUri)->AopNamespaceHandler.parse()
+   3. parse()->初始化了三个xml标签解析器：ConfigBeanDefinitionParser（解析config标签）、AspectJAutoProxyBeanDefinitionParser(解析aspectj-autoproxy)、ScopedProxyBeanDefinitionDecorator(scoped-proxy)等
+   4. 通过使用AspectJAutoProxyBeanDefinitionParser解析config标签往spring容器中注册了AnnotationAwareAspectJAutoProxyCreator的BeanDefinition
+   5. 在AbstractApplication的fresh()->registerBeanPostProcessors()完成将AnnotationAwareAspectJAutoProxyCreator注入到spring的IOC容器中
+   6. 在IOC创建单例实例时过程的AbstractAutowireCapableBeanFactory.initializeBean()->applyBeanPostProcessorsAfterInitialization()->执行AnnotationAwareAspectJAutoProxyCreator.postProcessAfterInitialization()回到上面的ProxyFactoryBean的流程中
+###为什么采用三级缓存
+   1. 例如 A 依赖 B，B 依赖 A，且有AOP代理时，通过前面AOP的分析我们得知：对一个类进行代理是在initializeBean()->postProcessAfterInitialization中实现的
+   2. 通过对前面的循环依赖解决的分析，我们得知：解决需要依赖的主要过程是将类的实例化过程和注入过程想分离
+   3. 当A在doCreateBean()->createBeanInstance()完成A的实例化，但未初始化A的属性，若在此处就将A放入二级缓存中，这时：在A调用populateBean完成对属性B的注入时
+   4. B在执行到createBeanInstance()实例化了B但此时，B在执行调用populateBean完成对属性A的注入时，A能从二级缓存中获取到A对象（但A只实例化未初始化），但应当注入A的代理对象
+   5. 即：在B从缓存中取出A的引用时，取出的A应该是一个实例化但未初始化的代理对象A，通过对前面的分析我们得知：要实现对A的代理的过程：即要调用AbstractAutoProxyCreator.wrapIfNecessary()方法进行完成即要通过BeanPostProcessor接口来对Bean进行增强
+   6. 通过5的分析得知要从缓存中取出A的代理，必须要经过一系列过程（通过BeanPostProcessor实现类的AbstractAutoProxyCreator.wrapIfNecessary完成增强），spring将这一过程封装成了一个匿名函数() -> getEarlyBeanReference(beanName, mbd, bean)
+   7. 通过对6的分析得知：需要执行匿名函数：getEarlyBeanReference来获取A对象，则此时就必须在先初始化A之前就这一段过程放入到缓存中，spring即在createBeanInstance()和populateBean函数之间通过addSingletonFactory()将这一段过程放入了缓存中
+   8. 但这一段过程是放入到那个缓存中呢，一级缓存不合适，二级缓存也不合适，此时只有在新建三级缓存来存放这一段过程了，这就是三级缓存的由来，其实也可以使用三级缓存的，即在createBeanInstance()之后就立马执行创建代理来这一个过程即可，并将这个对象立马放入二级缓存中
+   9. 通过8过程，B在从三级缓存中获取到匿名函数，然后在调用getEarlyBeanReference来创建A的代理对象完成对属性a的注入
+### 注解版
+   1. 通过前面IOC容器注解版的分析得知: 被@EnableAspectJAutoProxy(@Import(AspectJAutoProxyRegistrar))注解的类最终会执行AspectJAutoProxyRegistrar.registerBeanDefinitions()
+   2. AspectJAutoProxyRegistrar.registerBeanDefinitions()->AopConfigUtils.registerAspectJAnnotationAutoProxyCreatorIfNecessary()->
+   3. registerOrEscalateApcAsRequired(AnnotationAwareAspectJAutoProxyCreator.class, registry, source)来注入AnnotationAwareAspectJAutoProxyCreator
+   4. 至此IOC容器中已经存在AnnotationAwareAspectJAutoProxyCreator，然后在接上面的流程就完成了注解版的AOP
+
+
 > 类图
 ![ProxyFactoryBean.png](src\main\resources\images\ProxyFactoryBean.png)<br/>
 ![MethodBeforeAdviceInterceptor.png](src\main\resources\images\MethodBeforeAdviceInterceptor.png)<br/>
 ![MethodBeforeAdvice.png](src\main\resources\images\MethodBeforeAdvice.png)<br/>
+![AspectJAroundAdvice.png](src\main\resources\images\AspectJAroundAdvice.png)<br/>
 ![BeanNameAutoProxyCreator.png](src\main\resources\images\BeanNameAutoProxyCreator.png)<br/>
 ![AspectJAwareAdvisorAutoProxyCreator.png](src\main\resources\images\AspectJAwareAdvisorAutoProxyCreator.png)<br/>
-![AspectJAroundAdvice.png](src\main\resources\images\AspectJAroundAdvice.png)<br/>
+![AnnotationAwareAspectJAutoProxyCreator.png](src\main\resources\images\AnnotationAwareAspectJAutoProxyCreator.png)<br/>
+![getEarlyBeanReference.png](src\main\resources\images\getEarlyBeanReference.png)<br/>
+![AspectJAutoProxyRegistrar.png](src\main\resources\images\AspectJAutoProxyRegistrar.png)<br/>
