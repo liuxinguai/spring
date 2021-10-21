@@ -221,8 +221,7 @@
             * scan()加载bean过程：scan()->ClassPathBeanDefinitionScanner.doScan()
     3. 调用register()或scan()方法完成整体spring容器需要加载的bean操作
     4.调用refresh()完成bean的初始化操作
-
-### 依赖注入
+    
 
 ## AOP
 > AOP:面向切面编程，其中主要的几个概念
@@ -307,3 +306,83 @@
 ![AnnotationAwareAspectJAutoProxyCreator.png](src\main\resources\images\AnnotationAwareAspectJAutoProxyCreator.png)<br/>
 ![getEarlyBeanReference.png](src\main\resources\images\getEarlyBeanReference.png)<br/>
 ![AspectJAutoProxyRegistrar.png](src\main\resources\images\AspectJAutoProxyRegistrar.png)<br/>
+
+
+## spring-cache
+###前言JSR-107官方对java中的缓存抽象即：javax.cache:cache-api
+####JSR-107主要概念模型
+1. CacheManager(缓存存储管理器)：用于管理缓存存储管理器
+   + 个人理解：程序中往往很多地方都会使用缓存，而这些缓存往往是需要分开存储的，比如：存储用户信息和存储教师信息等
+   + 这时就需要一个管理器来管理这些缓存存储器
+2. CachingProvider(CacheManager提供器)：用于根据不同的参数创建不同的CacheManager
+3. Configuration(缓存储存器属性管理器): 用于描述缓存储存器的属性
+4. Cache(缓存存储器)：缓存程序数据的容器
+5. CacheEntryEvent(缓存事件)：
+   + EventType
+     + CREATED：缓存创建事件
+     + UPDATED：缓存更新事件
+     + REMOVED：缓存移除事件
+     + EXPIRED：缓存失效事件
+6. CacheEntryListener(缓存事件监听器)：
+   + CacheEntryCreatedListener：监听缓存存储器中添加缓存事件
+   + CacheEntryExpiredListener：监听缓存存储器中缓存失效事件
+   + CacheEntryRemovedListener：监听缓存存储器中缓存移除事件
+   + CacheEntryUpdatedListener：监听缓存存储器中缓存更新事件
+7. CahceEntryEventFilter(缓存事件过滤器)：用于过滤不需要触发的事件
+8. CacheResolver(缓存解析器)：程序中某处需要缓存，此时就需要先解析出来该处应使用那一种缓存储存器，这一过程就称之为：缓存解析器
+    + 个人理解：比如说一个方法上A()使用了@CachePut注解，即该方法会往缓存存储器中放置数据
+    + 那么此时就需要在调用该方法此前解析出来该方法应该使用那一种缓存存储器，解析的这一过程就称为：CacheResolver
+9. CacheInvocationContext(缓存执行上线文): 获取缓存时可能会使用到的信息：比如：方法名、方法参数、方法所属实例
+10. GeneratedCacheKey(缓存密钥)：唯一标识缓存存储器中的缓存
+11. ExpiryPolicy(缓存失效策略)：缓存失效所关注的内容
+12. 
+13. 注解：@CacheKey、@CachePut、@CacheRemove程序使用
+###spring-cache基础架构
+1. CacheManager(缓存存储管理器)：spring中用于管理缓存存储管理器
+2. Cache(缓存存储器)：spring中缓存程序数据的容器
+3. CacheResolver(缓存解析器)：spring中缓存解析器
+4. CacheOperationInvocationContext(缓存执行上线文): spring中缓存执行上线文：获取缓存key(密钥)
+5. CacheAnnotationParser(spring缓存标签解析器)：用于解析spring中缓存标签，并将这些标签解析成CacheOperation
+5. SpringCacheAnnotationParser(spring缓存标签解析器)：用于解析spring中缓存标签，并将这些标签解析成CacheOperation
+6. CacheOperation(缓存操作器): 分别一一对应spring中提供的缓存注解中的属性
+   + name
+   + cacheNames
+   + key
+   + keyGenerator
+   + cacheManager
+   + cacheResolver
+   + condition
+7. CacheOperationSource(缓存操作器的容器)：存放缓存操作器、解析缓存注解
+   + 判断该类或某个方法是否使用到缓存注解
+   + 并获取某个方法上所引用的注解解析后所对应的CacheOperation
+###spring-cache AOP架构
+1. InfrastructureAdvisorAutoProxyCreator: 缓存的AbstractAutoProxyCreator
+2. BeanFactoryCacheOperationSourceAdvisor：缓存的Advisor
+3. CacheInterceptor：缓存Advisor中的通知操作比如@CachePut后置通知、@Cacheable前置通知操作
+4. AnnotationCacheOperationSource: 内部拥有SpringCacheAnnotationParser实例用于解析方法上的缓存注解
+###spring-cache IOC结构
+1. CachingConfigurationSelector
+2. AutoProxyRegistrar
+   + 注入InfrastructureAdvisorAutoProxyCreator
+3. ProxyCachingConfiguration
+   + 注入 CacheInterceptor
+   + 注入 AnnotationCacheOperationSource 
+###spring-cache加载并使用流程分析
+1. IOC容器启动时解析@EnableCaching注解上的@Import(CachingConfigurationSelector.class)
+2. IOC容器注入CachingConfigurationSelector，执行selectImports()方法
+   1. selectImports()->注入AutoProxyRegistrar->注入InfrastructureAdvisorAutoProxyCreator
+   2. selectImports()->注入ProxyCachingConfiguration->注入CacheInterceptor、AnnotationCacheOperationSource、BeanFactoryCacheOperationSourceAdvisor
+3. springIOC容器在完成bean的注入流程的initializeBean()->postProcessAfterInitialization过程中完成使用了spring缓存注解类的代理
+   1. 调用InfrastructureAdvisorAutoProxyCreator.postProcessAfterInitialization()->wrapIfNecessary()
+   2. wrapIfNecessary()->getAdvicesAndAdvisorsForBean()->findEligibleAdvisors()->findAdvisorBeans()从springfactory容器中获取BeanFactoryCacheOperationSourceAdvisor
+4. 代理类调用被缓存注解标注的方法时->DynamicAdvisedInterceptor.invoke()->getInterceptorsAndDynamicInterceptionAdvice()
+   1. getInterceptorsAndDynamicInterceptionAdvice()->DefaultAdvisorChainFactory.getInterceptorsAndDynamicInterceptionAdvice()
+   2. getInterceptorsAndDynamicInterceptionAdvice()->BeanFactoryCacheOperationSourceAdvisor.matches()->DefaultAdvisorAdapterRegistry.getInterceptors()
+   3. getInterceptors()->BeanFactoryCacheOperationSourceAdvisor.getAdvice()获取到CacheInterceptor
+5. 执行CacheInterceptor.invoke()方法
+###类图
+![CachingConfigurationSelector.png](src\main\resources\images\CachingConfigurationSelector.png)<br/>
+![InfrastructureAdvisorAutoProxyCreator.png](src\main\resources\images\InfrastructureAdvisorAutoProxyCreator.png)<br/>
+![BeanFactoryCacheOperationSourceAdvisor.png](src\main\resources\images\BeanFactoryCacheOperationSourceAdvisor.png)<br/>
+![AnnotationCacheOperationSource.png](src\main\resources\images\AnnotationCacheOperationSource.png)<br/>
+![CacheInterceptor.png](src\main\resources\images\CacheInterceptor.png)<br/>
