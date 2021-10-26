@@ -340,10 +340,10 @@
 ###spring-cache基础架构
 1. CacheManager(缓存存储管理器)：spring中用于管理缓存存储管理器
 2. Cache(缓存存储器)：spring中缓存程序数据的容器
-3. CacheResolver(缓存解析器)：spring中缓存解析器
-4. CacheOperationInvocationContext(缓存执行上线文): spring中缓存执行上线文：获取缓存key(密钥)
-5. CacheAnnotationParser(spring缓存标签解析器)：用于解析spring中缓存标签，并将这些标签解析成CacheOperation
-5. SpringCacheAnnotationParser(spring缓存标签解析器)：用于解析spring中缓存标签，并将这些标签解析成CacheOperation
+3. CacheAnnotationParser(spring缓存标签解析器)：用于解析spring中缓存标签，并将这些标签解析成CacheOperation
+   1. SpringCacheAnnotationParser(spring缓存标签解析器)：用于解析spring中缓存标签，并将这些标签解析成CacheOperation
+4. CacheResolver(缓存解析器)：spring中缓存解析器
+5. CacheOperationInvocationContext(缓存执行上线文): spring中缓存执行上线文：获取缓存key(密钥)
 6. CacheOperation(缓存操作器): 分别一一对应spring中提供的缓存注解中的属性
    + name
    + cacheNames
@@ -386,3 +386,52 @@
 ![BeanFactoryCacheOperationSourceAdvisor.png](src\main\resources\images\BeanFactoryCacheOperationSourceAdvisor.png)<br/>
 ![AnnotationCacheOperationSource.png](src\main\resources\images\AnnotationCacheOperationSource.png)<br/>
 ![CacheInterceptor.png](src\main\resources\images\CacheInterceptor.png)<br/>
+
+
+## spring-tx
+###spring-tx 基础架构
+1. @Transactional: 注解式事务
+2. TransactionAnnotationParser: 事务注解解析器
+3. TransactionDefinition: 事务Definition（个人理解：事务解析器解析出来的结果）
+   + DefaultTransactionDefinition: 事务Definition基础实现
+   + TransactionAttribute: 扩展事务Definition的事务属性器
+   + DefaultTransactionAttribute: 默认扩展事务属性器的实现
+   + RuleBasedTransactionAttribute: 常规事务属性器
+4. TransactionAttributeSource: 判断并获取扩展事务Definition的事务属性器的资源器
+   + TransactionAttributeSource实现中拥有TransactionAnnotationParser解析注解
+5. TransactionManager: 事务管理器
+   + PlatformTransactionManager: 平台事务管理器
+   + ReactiveTransactionManager: 反应式事务管理器
+###spring-tx AOP架构
+1. InfrastructureAdvisorAutoProxyCreator: 事务的AbstractAutoProxyCreator
+2. BeanFactoryTransactionAttributeSourceAdvisor：事务的Advisor
+3. TransactionInterceptor：事务中的@Arround通知操作
+4. AnnotationTransactionAttributeSource: 判断该类是否依赖缓存和解析缓存依赖，内部依赖TransactionAnnotationParser
+###spring-tx IOC架构
+1. TransactionManagementConfigurationSelector
+2. AutoProxyRegistrar
+   + 注入InfrastructureAdvisorAutoProxyCreator
+3. ProxyTransactionManagementConfiguration
+   + 注入BeanFactoryTransactionAttributeSourceAdvisor
+   + 注入TransactionInterceptor
+   + 注入AnnotationTransactionAttributeSource
+###spring-tx加载并使用流程分析
+1. IOC容器启动时解析@EnableCaching注解上的@Import(CachingConfigurationSelector.class)
+2. TransactionManagementConfigurationSelector，执行selectImports()方法
+    1. selectImports()->注入AutoProxyRegistrar->注入InfrastructureAdvisorAutoProxyCreator
+    2. selectImports()->注入ProxyTransactionManagementConfiguration->注入TransactionInterceptor、AnnotationTransactionAttributeSource、BeanFactoryTransactionAttributeSourceAdvisor
+3. springIOC容器在完成bean的注入流程的initializeBean()->postProcessAfterInitialization过程中完成使用了spring缓存注解类的代理
+    1. 调用InfrastructureAdvisorAutoProxyCreator.postProcessAfterInitialization()->wrapIfNecessary()
+    2. wrapIfNecessary()->getAdvicesAndAdvisorsForBean()->findEligibleAdvisors()->findAdvisorBeans()从springfactory容器中获取BeanFactoryTransactionAttributeSourceAdvisor
+4. 代理类调用被缓存注解标注的方法时->DynamicAdvisedInterceptor.invoke()->getInterceptorsAndDynamicInterceptionAdvice()
+    1. getInterceptorsAndDynamicInterceptionAdvice()->DefaultAdvisorChainFactory.getInterceptorsAndDynamicInterceptionAdvice()
+    2. getInterceptorsAndDynamicInterceptionAdvice()->BeanFactoryCacheOperationSourceAdvisor.matches()->DefaultAdvisorAdapterRegistry.getInterceptors()
+    3. getInterceptors()->BeanFactoryTransactionAttributeSourceAdvisor.getAdvice()获取到TransactionInterceptor
+5. TransactionInterceptor.invoke()方法
+###类图
+![SpringTransactionAnnotationParser.png](src\main\resources\images\SpringTransactionAnnotationParser.png)<br/>
+![RuleBasedTransactionAttribute.png](src\main\resources\images\RuleBasedTransactionAttribute.png)<br/>
+![AnnotationTransactionAttributeSource.png](src\main\resources\images\AnnotationTransactionAttributeSource.png)<br/>
+![AbstractPlatformTransactionManager.png](src\main\resources\images\AbstractPlatformTransactionManager.png)<br/>
+![TransactionInterceptor.png](src\main\resources\images\TransactionInterceptor.png)<br/>
+![BeanFactoryTransactionAttributeSourceAdvisor.png](src\main\resources\images\BeanFactoryTransactionAttributeSourceAdvisor.png)<br/>
