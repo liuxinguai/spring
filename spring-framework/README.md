@@ -416,7 +416,7 @@
    + 注入TransactionInterceptor
    + 注入AnnotationTransactionAttributeSource
 ###spring-tx加载并使用流程分析
-1. IOC容器启动时解析@EnableCaching注解上的@Import(CachingConfigurationSelector.class)
+1. IOC容器启动时解析@EnableTransactionManagement注解上的@Import(TransactionManagementConfigurationSelector.class)
 2. TransactionManagementConfigurationSelector，执行selectImports()方法
     1. selectImports()->注入AutoProxyRegistrar->注入InfrastructureAdvisorAutoProxyCreator
     2. selectImports()->注入ProxyTransactionManagementConfiguration->注入TransactionInterceptor、AnnotationTransactionAttributeSource、BeanFactoryTransactionAttributeSourceAdvisor
